@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+pytest
+sentence-transformers
+faiss-cpu
+pytesseract
+pdf2image
+PyPDF2
+matplotlib
+seaborn
+pandas
+python-dotenv
+requests
+streamlit
+openai
