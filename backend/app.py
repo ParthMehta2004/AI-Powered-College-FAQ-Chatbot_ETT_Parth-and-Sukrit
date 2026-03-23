@@ -1,12 +1,32 @@
-# Backend application entry point
 from fastapi import FastAPI
+from rag.loader import extract_text_from_pdf
+from rag.embedder import chunk_text, generate_embeddings
+from rag.retriever import Retriever
+from llm.llm_client import generate_answer
+import os
 
-app = FastAPI(title="College FAQ Chatbot")
+app = FastAPI()
+
+documents = []
+for file in os.listdir("data/raw"):
+    if file.endswith(".pdf"):
+        text = extract_text_from_pdf(os.path.join("data/raw", file))
+        documents.append(text)
+
+chunks = []
+for doc in documents:
+    chunks.extend(chunk_text(doc))
+
+embeddings = generate_embeddings(chunks)
+retriever = Retriever(embeddings, chunks)
 
 @app.get("/")
-def root():
-    return {"message": "College FAQ Chatbot API is running"}
+def home():
+    return {"message": "College FAQ Chatbot Running"}
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+@app.post("/ask")
+def ask(question: str):
+    results = retriever.search(question)
+    context = "\n".join(results)
+    answer = generate_answer(context, question)
+    return {"answer": answer}
