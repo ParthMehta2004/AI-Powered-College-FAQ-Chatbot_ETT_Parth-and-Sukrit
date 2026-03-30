@@ -1,6 +1,7 @@
 import os
 import pickle
 import asyncio
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,23 +10,29 @@ from llm.llm_client import generate_answer
 
 retriever = None
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def load_everything():
+    """Runs in a background thread - loads embeddings + model without blocking port bind."""
     global retriever
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    EMBEDDINGS_PATH = os.path.join(BASE_DIR, "embeddings.pkl")
-    print(f"=== Loading embeddings from: {EMBEDDINGS_PATH} ===", flush=True)
     try:
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        EMBEDDINGS_PATH = os.path.join(BASE_DIR, "embeddings.pkl")
+        print(f"=== [BG] Loading embeddings from: {EMBEDDINGS_PATH} ===", flush=True)
         with open(EMBEDDINGS_PATH, "rb") as f:
             chunks, embeddings = pickle.load(f)
         retriever = Retriever(embeddings, chunks)
-        print(f"=== Embeddings loaded: {len(chunks)} chunks ===", flush=True)
-        # Pre-warm the SentenceTransformer model NOW so first query is fast
-        print("=== Pre-warming SentenceTransformer model ===", flush=True)
+        print(f"=== [BG] Embeddings loaded: {len(chunks)} chunks ===", flush=True)
+        # Pre-warm the model so first real query is instant
+        print("=== [BG] Pre-warming SentenceTransformer ===", flush=True)
         retriever.search("warmup")
-        print("=== Model ready ===", flush=True)
+        print("=== [BG] Model ready - all systems go ===", flush=True)
     except Exception as e:
-        print(f"=== ERROR loading embeddings: {e} ===", flush=True)
+        print(f"=== [BG] ERROR: {e} ===", flush=True)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start background thread immediately - port binds right away
+    t = threading.Thread(target=load_everything, daemon=True)
+    t.start()
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -47,7 +54,7 @@ async def ask(question: str = Query(...)):
     if not question or not question.strip():
         return {"answer": "Please provide a valid question."}
     if retriever is None:
-        return {"answer": "Server is still loading, please try again in a moment."}
+        return {"answer": "Server is still warming up (loading model), please try again in 30 seconds."}
     try:
         loop = asyncio.get_event_loop()
         results = retriever.search(question)
@@ -76,6 +83,6 @@ async def debug():
             messages=[{"role": "user", "content": "say hello in one word"}],
             max_tokens=10,
         )
-        return {"status": "Groq working", "response": response.choices[0].message.content, "retriever": "loaded" if retriever else "NOT loaded"}
+        return {"status": "Groq working", "response": response.choices[0].message.content, "retriever": "loaded" if retriever else "still loading"}
     except Exception as e:
         return {"error": str(e)}
