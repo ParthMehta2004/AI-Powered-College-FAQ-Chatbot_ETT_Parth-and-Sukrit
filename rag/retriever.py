@@ -1,13 +1,14 @@
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
 
-# Load model once at module level (lazy, but cached across requests)
+# Lazy module-level cache for the model
 _model = None
 
 def get_model():
+    """Import SentenceTransformer lazily so it does NOT slow down uvicorn startup."""
     global _model
     if _model is None:
+        from sentence_transformers import SentenceTransformer  # deferred import
         _model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
     return _model
 
