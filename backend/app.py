@@ -58,3 +58,26 @@ async def ask(question: str = Query(...)):
     except Exception as e:
         print(f"=== ERROR in /ask: {e} ===", flush=True)
         return {"answer": f"Error: {str(e)}"}
+
+
+
+
+@app.get("/debug")
+async def debug():
+    import os
+    from google import genai
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return {"error": "GEMINI_API_KEY is NOT set"}
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents="say hello in one word"
+        )
+        return {"status": "✅ Gemini working", "response": response.text}
+    except Exception as e:
+        return {"error": str(e)}
+
