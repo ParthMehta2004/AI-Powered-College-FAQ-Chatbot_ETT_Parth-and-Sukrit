@@ -20,6 +20,10 @@ async def lifespan(app: FastAPI):
             chunks, embeddings = pickle.load(f)
         retriever = Retriever(embeddings, chunks)
         print(f"=== Embeddings loaded: {len(chunks)} chunks ===", flush=True)
+        # Pre-warm the SentenceTransformer model NOW so first query is fast
+        print("=== Pre-warming SentenceTransformer model ===", flush=True)
+        retriever.search("warmup")
+        print("=== Model ready ===", flush=True)
     except Exception as e:
         print(f"=== ERROR loading embeddings: {e} ===", flush=True)
     yield
@@ -50,7 +54,7 @@ async def ask(question: str = Query(...)):
         context = "\n".join(results)
         answer = await asyncio.wait_for(
             loop.run_in_executor(None, generate_answer, context, question),
-            timeout=30.0
+            timeout=120.0
         )
         return {"answer": answer}
     except asyncio.TimeoutError:
@@ -61,13 +65,10 @@ async def ask(question: str = Query(...)):
 
 @app.get("/debug")
 async def debug():
-    import os
     from groq import Groq
-
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return {"error": "GROQ_API_KEY is NOT set"}
-
     try:
         client = Groq(api_key=api_key)
         response = client.chat.completions.create(
@@ -75,6 +76,6 @@ async def debug():
             messages=[{"role": "user", "content": "say hello in one word"}],
             max_tokens=10,
         )
-        return {"status": "Groq working", "response": response.choices[0].message.content}
+        return {"status": "Groq working", "response": response.choices[0].message.content, "retriever": "loaded" if retriever else "NOT loaded"}
     except Exception as e:
         return {"error": str(e)}
