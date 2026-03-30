@@ -6,9 +6,9 @@ def generate_answer(context, question):
     if not api_key:
         return "Error: GEMINI_API_KEY environment variable is not set."
 
-    client = genai.Client(api_key=api_key)
-
-    prompt = f"""You are a helpful college FAQ assistant. Answer the question using only the context below.
+    try:
+        client = genai.Client(api_key=api_key)
+        prompt = f"""You are a helpful college FAQ assistant. Answer the question using only the context below.
 If the answer is not in the context, say "I don't have information on that."
 
 Context:
@@ -18,11 +18,11 @@ Question: {question}
 
 Answer:"""
 
-    try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=prompt
         )
         return response.text
+
     except Exception as e:
         return f"Error generating answer: {str(e)}"
