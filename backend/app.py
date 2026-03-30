@@ -6,7 +6,7 @@ import pickle
 
 app = FastAPI()
 
-
+# ✅ CORS (needed for frontend)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# ✅ Load embeddings (NO heavy processing now)
 with open("embeddings.pkl", "rb") as f:
     chunks, embeddings = pickle.load(f)
 
