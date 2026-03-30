@@ -9,7 +9,7 @@ def get_model():
     global _model
     if _model is None:
         from sentence_transformers import SentenceTransformer  # deferred import
-        _model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
+        _model = SentenceTransformer("all-MiniLM-L6-v2")  # must match embeddings.pkl
     return _model
 
 class Retriever:
