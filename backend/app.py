@@ -36,7 +36,7 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"message": "Chatbot is running ✅", "status": "loaded" if retriever else "loading"}
+    return {"message": "Chatbot is running", "status": "loaded" if retriever else "loading"}
 
 @app.post("/ask")
 async def ask(question: str = Query(...)):
@@ -59,25 +59,22 @@ async def ask(question: str = Query(...)):
         print(f"=== ERROR in /ask: {e} ===", flush=True)
         return {"answer": f"Error: {str(e)}"}
 
-
-
-
 @app.get("/debug")
 async def debug():
     import os
-    from google import genai
-    
-    api_key = os.getenv("GEMINI_API_KEY")
+    from groq import Groq
+
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        return {"error": "GEMINI_API_KEY is NOT set"}
-    
+        return {"error": "GROQ_API_KEY is NOT set"}
+
     try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents="say hello in one word"
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": "say hello in one word"}],
+            max_tokens=10,
         )
-        return {"status": "✅ Gemini working", "response": response.text}
+        return {"status": "Groq working", "response": response.choices[0].message.content}
     except Exception as e:
         return {"error": str(e)}
-
