@@ -36,7 +36,7 @@ async function sendMessage() {
 
     // 60 second timeout to handle Render cold start
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000);
+    const timeout = setTimeout(() => controller.abort(), 120000);
 
     try {
         const res = await fetch(API_URL + "/ask?question=" + encodeURIComponent(question), {
