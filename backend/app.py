@@ -9,10 +9,10 @@ from rag.retriever import Retriever
 from llm.llm_client import generate_answer
 
 retriever = None
+is_ready = False
 
 def load_everything():
-    """Runs in a background thread - loads embeddings + model without blocking port bind."""
-    global retriever
+    global retriever, is_ready
     try:
         BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         EMBEDDINGS_PATH = os.path.join(BASE_DIR, "embeddings.pkl")
@@ -21,19 +21,17 @@ def load_everything():
             chunks, embeddings = pickle.load(f)
         retriever = Retriever(embeddings, chunks)
         print(f"=== [BG] Embeddings loaded: {len(chunks)} chunks ===", flush=True)
-        # Pre-warm the model so first real query is instant
-        print("=== [BG] Pre-warming SentenceTransformer ===", flush=True)
-        retriever.search("warmup")
-        print("=== [BG] Model ready - all systems go ===", flush=True)
+        # NO pre-warming - skip it, it causes timeout
+        is_ready = True
+        print("=== [BG] Ready ===", flush=True)
     except Exception as e:
         print(f"=== [BG] ERROR: {e} ===", flush=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start background thread immediately - port binds right away
     t = threading.Thread(target=load_everything, daemon=True)
     t.start()
-    yield
+    yield  # port binds instantly
 
 app = FastAPI(lifespan=lifespan)
 
@@ -47,14 +45,18 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"message": "Chatbot is running", "status": "loaded" if retriever else "loading"}
+    return {"message": "Chatbot is running ✅", "status": "loaded" if is_ready else "loading"}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 @app.post("/ask")
 async def ask(question: str = Query(...)):
     if not question or not question.strip():
         return {"answer": "Please provide a valid question."}
-    if retriever is None:
-        return {"answer": "Server is still warming up (loading model), please try again in 30 seconds."}
+    if not is_ready:
+        return {"answer": "Server is still warming up, please try again in 30 seconds."}
     try:
         loop = asyncio.get_event_loop()
         results = retriever.search(question)
@@ -83,6 +85,10 @@ async def debug():
             messages=[{"role": "user", "content": "say hello in one word"}],
             max_tokens=10,
         )
-        return {"status": "Groq working", "response": response.choices[0].message.content, "retriever": "loaded" if retriever else "still loading"}
+        return {
+            "status": "✅ Groq working",
+            "response": response.choices[0].message.content,
+            "retriever": "loaded" if is_ready else "still loading"
+        }
     except Exception as e:
         return {"error": str(e)}
