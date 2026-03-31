@@ -34,12 +34,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# ✅ Explicitly list all allowed origins
+# Explicitly allow all Vercel preview URLs + wildcard
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,  # must be False when using wildcard
-    allow_methods=["*"],
+    allow_origin_regex="https://.*\.vercel\.app",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
