@@ -1,75 +1,94 @@
-const API_URL = "https://ai-powered-college-faq-chatbot-ett-parth.onrender.com";
+import os
+import pickle
+import asyncio
+import threading
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from rag.retriever import Retriever
+from llm.llm_client import generate_answer
 
-let chatHistory = JSON.parse(localStorage.getItem("chatHistory")) || [];
+retriever = None
+is_ready = False
 
-function renderChat() {
-    const chatBox = document.getElementById("chat-box");
-    chatBox.innerHTML = "";
-    chatHistory.forEach(msg => {
-        const div = document.createElement("div");
-        div.className = msg.type;
-        div.innerText = msg.text;
-        chatBox.appendChild(div);
-    });
-    chatBox.scrollTop = chatBox.scrollHeight;
-}
+def load_everything():
+    global retriever, is_ready
+    try:
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        EMBEDDINGS_PATH = os.path.join(BASE_DIR, "embeddings.pkl")
+        print(f"=== [BG] Loading embeddings from: {EMBEDDINGS_PATH} ===", flush=True)
+        with open(EMBEDDINGS_PATH, "rb") as f:
+            chunks, embeddings = pickle.load(f)
+        retriever = Retriever(embeddings, chunks)
+        print(f"=== [BG] Embeddings loaded: {len(chunks)} chunks ===", flush=True)
+        is_ready = True
+        print("=== [BG] Ready ===", flush=True)
+    except Exception as e:
+        print(f"=== [BG] ERROR: {e} ===", flush=True)
 
-async function warmUpServer() {
-    try {
-        // Use no-cors mode for warmup ping to avoid CORS preflight failure
-        await fetch(API_URL + "/health", { method: "GET", mode: "no-cors" });
-    } catch (e) {
-        // silently ignore
-    }
-}
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    t = threading.Thread(target=load_everything, daemon=True)
+    t.start()
+    yield
 
-async function sendMessage() {
-    const input = document.getElementById("user-input");
-    const question = input.value.trim();
-    if (!question) return;
+app = FastAPI(lifespan=lifespan)
 
-    chatHistory.push({ type: "user", text: "You: " + question });
-    input.value = "";
+# ✅ Explicitly list all allowed origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,  # must be False when using wildcard
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    chatHistory.push({ type: "bot", text: "Bot: Thinking... (may take up to 90s if server just woke up)" });
-    renderChat();
+@app.get("/")
+def home():
+    return {"message": "Chatbot is running ✅", "status": "loaded" if is_ready else "loading"}
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000); // 120 seconds
+@app.get("/health")
+def health():
+    return {"ok": True}
 
-    try {
-        const res = await fetch(API_URL + "/ask?question=" + encodeURIComponent(question), {
-            method: "POST",
-            signal: controller.signal
-        });
-        clearTimeout(timeout);
+@app.post("/ask")
+async def ask(question: str = Query(...)):
+    if not question or not question.strip():
+        return {"answer": "Please provide a valid question."}
+    if not is_ready:
+        return {"answer": "Server is still warming up, please try again in 30 seconds."}
+    try:
+        loop = asyncio.get_event_loop()
+        results = retriever.search(question)
+        context = "\n".join(results)
+        answer = await asyncio.wait_for(
+            loop.run_in_executor(None, generate_answer, context, question),
+            timeout=120.0
+        )
+        return {"answer": answer}
+    except asyncio.TimeoutError:
+        return {"answer": "Request timed out. Please try again."}
+    except Exception as e:
+        print(f"=== ERROR in /ask: {e} ===", flush=True)
+        return {"answer": f"Error: {str(e)}"}
 
-        const data = await res.json();
-        chatHistory.pop();
-        chatHistory.push({ type: "bot", text: "Bot: " + (data.answer || "No answer returned.") });
-
-    } catch (err) {
-        clearTimeout(timeout);
-        chatHistory.pop();
-        if (err.name === "AbortError") {
-            chatHistory.push({ type: "bot", text: "Bot: Server is waking up. Please try again in 30 seconds." });
-        } else {
-            chatHistory.push({ type: "bot", text: "Bot: Error - " + err.message });
+@app.get("/debug")
+async def debug():
+    from groq import Groq
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return {"error": "GROQ_API_KEY is NOT set"}
+    try:
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": "say hello in one word"}],
+            max_tokens=10,
+        )
+        return {
+            "status": "✅ Groq working",
+            "response": response.choices[0].message.content,
+            "retriever": "loaded" if is_ready else "still loading"
         }
-    }
-
-    localStorage.setItem("chatHistory", JSON.stringify(chatHistory));
-    renderChat();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    const input = document.getElementById("user-input");
-    if (input) {
-        input.addEventListener("keydown", (e) => {
-            if (e.key === "Enter") sendMessage();
-        });
-    }
-    warmUpServer();
-});
-
-renderChat();
+    except Exception as e:
+        return {"error": str(e)}
