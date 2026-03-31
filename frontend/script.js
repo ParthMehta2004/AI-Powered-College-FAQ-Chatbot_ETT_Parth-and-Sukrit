@@ -14,12 +14,12 @@ function renderChat() {
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-// Ping the server on page load so it wakes up before user asks anything
 async function warmUpServer() {
     try {
-        await fetch(API_URL + "/", { method: "GET" });
+        // Use no-cors mode for warmup ping to avoid CORS preflight failure
+        await fetch(API_URL + "/health", { method: "GET", mode: "no-cors" });
     } catch (e) {
-        // silently ignore - just a warm-up
+        // silently ignore
     }
 }
 
@@ -31,12 +31,11 @@ async function sendMessage() {
     chatHistory.push({ type: "user", text: "You: " + question });
     input.value = "";
 
-    chatHistory.push({ type: "bot", text: "Bot: Thinking... (may take up to 60s on first load)" });
+    chatHistory.push({ type: "bot", text: "Bot: Thinking... (may take up to 90s if server just woke up)" });
     renderChat();
 
-    // 60 second timeout to handle Render cold start
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
+    const timeout = setTimeout(() => controller.abort(), 120000); // 120 seconds
 
     try {
         const res = await fetch(API_URL + "/ask?question=" + encodeURIComponent(question), {
@@ -46,18 +45,16 @@ async function sendMessage() {
         clearTimeout(timeout);
 
         const data = await res.json();
-
-        chatHistory.pop(); // remove Thinking...
+        chatHistory.pop();
         chatHistory.push({ type: "bot", text: "Bot: " + (data.answer || "No answer returned.") });
 
     } catch (err) {
         clearTimeout(timeout);
-        chatHistory.pop(); // remove Thinking...
-
+        chatHistory.pop();
         if (err.name === "AbortError") {
-            chatHistory.push({ type: "bot", text: "Bot: Request timed out. Please try again in 30 seconds." });
+            chatHistory.push({ type: "bot", text: "Bot: Server is waking up. Please try again in 30 seconds." });
         } else {
-            chatHistory.push({ type: "bot", text: "Bot: Error connecting to server. Please try again." });
+            chatHistory.push({ type: "bot", text: "Bot: Error - " + err.message });
         }
     }
 
@@ -65,7 +62,6 @@ async function sendMessage() {
     renderChat();
 }
 
-// Enter key support
 document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("user-input");
     if (input) {
@@ -73,7 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (e.key === "Enter") sendMessage();
         });
     }
-    warmUpServer(); // wake up Render on page load
+    warmUpServer();
 });
 
 renderChat();
