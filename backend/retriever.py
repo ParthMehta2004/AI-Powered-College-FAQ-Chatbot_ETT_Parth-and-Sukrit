@@ -17,7 +17,7 @@ class Retriever:
         self.index = faiss.IndexFlatL2(arr.shape[1])
         self.index.add(arr)
 
-    def search(self, query: str, k: int = 5):
+    def search(self, query: str, k: int = 10):
         model = _get_model()
         vec = np.array(list(model.embed([query])), dtype="float32")
         _, indices = self.index.search(vec, k)
