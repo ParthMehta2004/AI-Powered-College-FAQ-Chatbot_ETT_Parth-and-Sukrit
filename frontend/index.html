@@ -119,7 +119,7 @@
   .message.user .avatar { background:var(--bg-msg-you); border:1px solid rgba(91,127,255,.3); }
   .bubble {
     padding:12px 16px; border-radius:var(--radius);
-    font-size:.88rem; line-height:1.65; max-width:calc(100% - 44px);
+    font-size:.88rem; line-height:1.7; max-width:calc(100% - 44px);
   }
   .message.ai .bubble {
     background:var(--bg-msg-ai); border:1px solid var(--border);
@@ -135,6 +135,30 @@
   }
   .message.ai .sender-label { color:var(--accent2); }
   .message.user .sender-label { color:var(--text-muted); text-align:right; }
+
+  /* Markdown rendered content */
+  .bubble strong { color:var(--accent2); font-weight:600; }
+  .bubble em { color:var(--text-muted); font-style:italic; }
+  .bubble .md-heading {
+    font-size:.95rem; font-weight:700;
+    color:var(--accent2); margin-bottom:10px; display:block;
+  }
+  .bubble .md-list {
+    list-style:none; padding:0; margin:8px 0;
+  }
+  .bubble .md-list li {
+    display:flex; gap:8px; margin:8px 0;
+    line-height:1.6;
+  }
+  .bubble .md-list li .num {
+    color:var(--accent2); font-weight:700; flex-shrink:0; min-width:18px;
+  }
+  .bubble .md-list li .bullet {
+    color:var(--accent); flex-shrink:0;
+  }
+  .bubble p { margin:6px 0; }
+  .bubble p:first-child { margin-top:0; }
+  .bubble p:last-child { margin-bottom:0; }
 
   .typing-dots { display:flex; gap:4px; padding:4px 0; align-items:center; }
   .typing-dots span {
@@ -223,9 +247,8 @@
 </div>
 
 <script>
-// ─── CONFIG: replace with your Render URL after deploying backend ───────────
+// ── REPLACE THIS with your Railway URL ────────────────────────────────────────
 const API_URL = "https://ai-powered-college-faq-chatbotettparth-and-suk-production.up.railway.app";
-// e.g.  const API_URL = "https://mujchat-backend.onrender.com";
 // ─────────────────────────────────────────────────────────────────────────────
 
 let isLoading = false;
@@ -248,17 +271,65 @@ function hideWelcome() {
   document.getElementById('welcome')?.remove();
 }
 
+// ── Markdown → HTML renderer ──────────────────────────────────────────────────
+function renderMarkdown(text) {
+  const lines = text.split('\n');
+  let html = '';
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Numbered list item: "1. **Title**: body" or "1. body"
+    const numMatch = line.match(/^(\d+)\.\s+(.*)/);
+    if (numMatch) {
+      const content = inlineFormat(numMatch[2]);
+      html += `<ul class="md-list"><li><span class="num">${numMatch[1]}.</span><span>${content}</span></li></ul>`;
+      i++; continue;
+    }
+
+    // Bullet list item
+    const bulletMatch = line.match(/^[-•]\s+(.*)/);
+    if (bulletMatch) {
+      const content = inlineFormat(bulletMatch[1]);
+      html += `<ul class="md-list"><li><span class="bullet">•</span><span>${content}</span></li></ul>`;
+      i++; continue;
+    }
+
+    // Blank line
+    if (line.trim() === '') {
+      i++; continue;
+    }
+
+    // Normal paragraph line
+    html += `<p>${inlineFormat(line)}</p>`;
+    i++;
+  }
+
+  return html;
+}
+
+function inlineFormat(text) {
+  return text
+    // Bold **text**
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic *text*
+    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function addMessage(role, content) {
   hideWelcome();
   const area = document.getElementById('chat-area');
   const div  = document.createElement('div');
   div.className = `message ${role}`;
   const isAI = role === 'ai';
+  const rendered = isAI ? renderMarkdown(content) : content;
   div.innerHTML = `
     <div class="avatar">${isAI ? '🎓' : '👤'}</div>
     <div>
       <div class="sender-label">${isAI ? 'MUJ Chat' : 'You'}</div>
-      <div class="bubble">${content}</div>
+      <div class="bubble">${rendered}</div>
     </div>`;
   area.appendChild(div);
   area.scrollTop = area.scrollHeight;
@@ -311,7 +382,7 @@ async function sendMessage() {
     if (err.name === 'AbortError')
       addMessage('ai', '⏱ Request timed out. The server may be waking up — please try again in 30 seconds.');
     else
-      addMessage('ai', '❌ Could not reach the server. Check the console for details.');
+      addMessage('ai', '❌ Could not reach the server. Please try again.');
   }
 
   isLoading = false;
@@ -319,7 +390,6 @@ async function sendMessage() {
   textarea.focus();
 }
 
-// Poll /health until the backend is ready
 async function checkStatus() {
   const dot  = document.getElementById('status-dot');
   const text = document.getElementById('status-text');
@@ -327,16 +397,17 @@ async function checkStatus() {
     const res  = await fetch(`${API_URL}/health`);
     const data = await res.json();
     if (data.status === 'loaded') {
-      dot.className  = 'status-dot ready';
+      dot.className    = 'status-dot ready';
       text.textContent = 'Ready';
     } else {
+      dot.className    = 'status-dot';
       text.textContent = 'Loading KB…';
-      setTimeout(checkStatus, 5000);
+      setTimeout(checkStatus, 3000);
     }
   } catch {
-    dot.className  = 'status-dot error';
+    dot.className    = 'status-dot error';
     text.textContent = 'Offline';
-    setTimeout(checkStatus, 10000);
+    setTimeout(checkStatus, 5000);
   }
 }
 checkStatus();
